@@ -1,0 +1,49 @@
+import xml, psycopg2, ppygis
+from xml.dom.minidom import parse
+
+#xmls = parse("comunas.osm")
+xmls = parse("barrios.osm")
+
+#Almacenamiento de los nodos para posterior recuperacion a partir de
+#los atributos de referencia "ref"
+nodes = {}
+for n in xmls.getElementsByTagName("node"):
+	nodes[n.getAttribute("id")] = [n.getAttribute("lat"),n.getAttribute("lon")]
+del n
+
+#Conexion a la base de datos con psycopg2 y creacion del cursor de consultas
+conn_string = "host='localhost' dbname='addresses' user='postgres' password='postgres1'"
+pg_conn = psycopg2.connect(conn_string)
+cursor = pg_conn.cursor()
+
+for w in xmls.getElementsByTagName("way"):
+	gid = w.getAttribute("id")
+	gtags = {}
+	gtags["name"] = ""
+	polyline = []	
+	
+	#Recorrido y obtencion de las etiquetas de la geometria w
+	for tag in w.getElementsByTagName("tag"):
+		if tag.hasAttribute("k") and tag.hasAttribute('v'):
+			gtags[tag.getAttribute("k")] = tag.getAttribute('v')
+		del tag
+
+	#Recorrido, obtencion, ordenamiento de las coordenadas de la geometria w
+	#y posterior creacion de la geometria con ppygis
+	for nd in w.getElementsByTagName('nd'):
+		if nd.hasAttribute('ref'):
+			lat = float(nodes[nd.getAttribute("ref")][0])
+			lon = float(nodes[nd.getAttribute("ref")][1])
+			polyline.append(ppygis.Point(lon, lat, srid=4326))
+	del nd
+	geom = ppygis.LineString(polyline, srid=4326)
+	
+	if gtags["name"] != "":
+		#cursor.execute("INSERT INTO _communes (cm_id, cm_name, geom) VALUES (%s, %s, %s);", (gid, gtags["name"], geom))
+		cursor.execute("INSERT INTO _neighborhoods (nh_id, nh_name, geom) VALUES (%s, %s, %s);", (gid, gtags["name"], geom))
+		
+cursor.close()
+pg_conn.commit()
+pg_conn.close()
+print 'Migracion completada'
+
